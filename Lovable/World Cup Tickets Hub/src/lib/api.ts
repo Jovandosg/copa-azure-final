@@ -39,6 +39,10 @@ export interface BracketMatch {
   score1: number | null;
   score2: number | null;
   status: string;
+  date: string | null;
+  time: string | null;
+  stadium_name: string | null;
+  stadium_city: string | null;
 }
 
 export interface BracketResponse {

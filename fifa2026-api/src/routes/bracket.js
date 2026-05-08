@@ -182,10 +182,15 @@ router.get('/', async (req, res) => {
     const teams = teamsRes.recordset;
 
     const matchesRes = await query(`
-      SELECT id, home_team_id, away_team_id, group_name, stage, home_score, away_score, status,
-             CONVERT(varchar(5), time, 108) AS time
-      FROM matches
-      ORDER BY id
+      SELECT m.id, m.home_team_id, m.away_team_id, m.group_name, m.stage,
+             m.home_score, m.away_score, m.status,
+             CONVERT(varchar(10), m.date, 23) AS match_date,
+             CONVERT(varchar(5), m.time, 108) AS time,
+             s.name AS stadium_name,
+             s.city AS stadium_city
+      FROM matches m
+      LEFT JOIN stadiums s ON s.id = m.stadium_id
+      ORDER BY m.id
     `);
     const allMatches = matchesRes.recordset;
 
@@ -372,6 +377,10 @@ router.get('/', async (req, res) => {
         score1: dbMatch.home_score,
         score2: dbMatch.away_score,
         status: dbMatch.status,
+        date: dbMatch.match_date,
+        time: dbMatch.time,
+        stadium_name: dbMatch.stadium_name,
+        stadium_city: dbMatch.stadium_city,
       };
     }
 

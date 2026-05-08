@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Trophy, BarChart3 } from 'lucide-react';
+import { Trophy, BarChart3, MapPin, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,14 @@ const SlotRow: React.FC<{ slot: BracketSlot; isWinner: boolean }> = ({ slot, isW
   );
 };
 
+function formatMatchDate(d: string | null): string | null {
+  if (!d) return null;
+  // 'YYYY-MM-DD' → 'DD/MM'
+  const parts = d.split('-');
+  if (parts.length !== 3) return d;
+  return `${parts[2]}/${parts[1]}`;
+}
+
 const BracketCard: React.FC<{ match: BracketMatch }> = ({ match }) => {
   const isFinished =
     match.status === 'finished' && match.score1 !== null && match.score2 !== null;
@@ -39,6 +47,9 @@ const BracketCard: React.FC<{ match: BracketMatch }> = ({ match }) => {
       ? 'slot2'
       : null
     : null;
+
+  const dateLabel = formatMatchDate(match.date);
+  const hasMeta = !!(dateLabel || match.time || match.stadium_name);
 
   return (
     <Card className="rounded-xl border-border overflow-hidden bg-card">
@@ -68,6 +79,29 @@ const BracketCard: React.FC<{ match: BracketMatch }> = ({ match }) => {
           {isFinished && <span className="px-3 font-bold text-lg">{match.score2}</span>}
         </div>
       </div>
+      {hasMeta && (
+        <div className="bg-muted/20 px-3 py-2 border-t border-border space-y-1">
+          {(dateLabel || match.time) && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock className="w-3 h-3" />
+              <span>
+                {dateLabel}
+                {dateLabel && match.time ? ' · ' : ''}
+                {match.time}
+              </span>
+            </div>
+          )}
+          {match.stadium_name && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <MapPin className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate" title={`${match.stadium_name}${match.stadium_city ? ' — ' + match.stadium_city : ''}`}>
+                {match.stadium_name}
+                {match.stadium_city ? ` — ${match.stadium_city}` : ''}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </Card>
   );
 };
