@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Threading.RateLimiting;
 using Fifa2026.V2.Gateway.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Yarp.ReverseProxy.Transforms;
 
 // =============================================================================
@@ -11,9 +12,17 @@ using Yarp.ReverseProxy.Transforms;
 // transform e JWT placeholder são MECANISMOS DE CÓDIGO, não policies XML opacas.
 // Cada capacidade tem paridade 1:1 com uma policy APIM (ADE-004 Invariante 3).
 //
-// Pipeline (ORDEM IMPORTA — ADE-004 / story Task 2.6):
-//   UseCors → UseRateLimiter → XCacheMiddleware (cache 30s) → UseAuthentication
-//           → UseAuthorization → MapReverseProxy
+// Pipeline (ORDEM IMPORTA — ADE-004 / story Task 2.6; REORDENADO na Story 4.4):
+//   UseForwardedHeaders → UseCors → UseRateLimiter → UseAuthentication
+//           → UseAuthorization → XCacheMiddleware (cache 30s, PÓS-AUTH) → MapReverseProxy
+//
+// Story 4.4 (ADE-009 §Consequences — P1 de segurança): o XCacheMiddleware roda DEPOIS
+// de UseAuthentication/UseAuthorization. Antes, um cache HIT fazia short-circuit ANTES do
+// auth e servia o status de uma compra SEM token válido por até 30s. Agora TODA request
+// (HIT ou MISS) passa por auth primeiro — o cache só é alcançado quando autenticada.
+// UseForwardedHeaders precede o rate-limiter (que particiona por IP): atrás do ingress do
+// Container Apps o RemoteIpAddress é o do ingress, não do cliente — o header X-Forwarded-For
+// devolve o IP real, tornando a partição por-cliente efetiva de novo.
 // =============================================================================
 
 var builder = WebApplication.CreateBuilder(args);
@@ -268,6 +277,36 @@ builder.Services
 // (5/min). Os contadores não se misturam, a rota /purchase continua 5/min (teste verde)
 // e as rotas admin ganham folga sem afrouxar o resto do gateway.
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Story 4.4 (ADE-009 §Consequences) — Forwarded Headers. O gateway roda atrás do
+// ingress do Azure Container Apps: sem tratar X-Forwarded-For, HttpContext.Connection.
+// RemoteIpAddress é o IP do INGRESS (sempre o mesmo / pool pequeno), não do cliente —
+// então a partição "por IP" do rate-limiter abaixo colapsa num único bucket (todo o
+// tráfego compete pelos mesmos 5/min). ForwardedHeadersMiddleware reescreve o
+// RemoteIpAddress a partir do X-Forwarded-For antes do rate-limiter (ver ordem do
+// pipeline no fim do arquivo — UseForwardedHeaders vem primeiro).
+//
+// KnownNetworks/KnownProxies LIMPOS de propósito: por padrão o middleware só confia em
+// X-Forwarded-For vindo da rede loopback — o ingress do Container Apps NÃO é loopback,
+// então o header seria ignorado. Com as duas listas vazias, o middleware confia no
+// X-Forwarded-For de QUALQUER origem imediata (comportamento documentado do ASP.NET Core).
+// DECISÃO consciente e segura no contexto do CAE: o ingress é a borda confiável do
+// ambiente e APÕE o IP real do cliente à DIREITA do X-Forwarded-For; com ForwardLimit=1
+// (default) o middleware lê a entrada mais à direita = o IP que o ingress anexou, então um
+// X-Forwarded-For forjado pelo cliente (à esquerda) NÃO é lido. Não há proxy adicional
+// não-confiável entre o ingress e este gateway.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+    // SEGURANCA (gate @architect, Story 4.4): pina ForwardLimit=1 explicitamente. Com as listas
+    // limpas acima, este e o UNICO guardrail contra spoofing de IP — le apenas a entrada mais a
+    // direita (o IP que o ingress CAE anexou), ignorando qualquer X-Forwarded-For forjado pelo
+    // cliente. NAO aumentar sem reavaliar o rate-limit por IP (particiona por RemoteIpAddress).
+    options.ForwardLimit = 1;
+});
+
 const int ClientPermitLimit = 5;    // AC-5 original (rotas de cliente).
 const int AdminPermitLimit = 60;    // rotas /admin/* (Dashboard faz N chamadas).
 builder.Services.AddRateLimiter(options =>
@@ -565,12 +604,17 @@ builder.Services.AddApplicationInsightsTelemetry();
 
 var app = builder.Build();
 
-// Pipeline na ORDEM correta (Task 2.6 / ADE-004):
+// Pipeline na ORDEM correta (Task 2.6 / ADE-004; REORDENADO na Story 4.4 — cache PÓS-AUTH):
+app.UseForwardedHeaders();        // 0. Reescreve RemoteIpAddress a partir do X-Forwarded-For
+                                  //    do ingress ANTES do rate-limiter (que particiona por IP).
 app.UseCors(CorsPolicy);          // 1. CORS
-app.UseRateLimiter();             // 2. Rate limiter (429)
-app.UseMiddleware<XCacheMiddleware>(); // 3. Cache de borda (30s) + X-Cache HIT/MISS (AC-6)
-app.UseAuthentication();          // 4. Authentication (selector roteia CIAM vs Admin)
-app.UseAuthorization();           // 5. Authorization
+app.UseRateLimiter();             // 2. Rate limiter (429) — agora vê o IP real do cliente
+app.UseAuthentication();          // 3. Authentication (selector roteia CIAM vs Admin)
+app.UseAuthorization();           // 4. Authorization
+// 5. Cache de borda (30s) + X-Cache HIT/MISS (AC-6) — DEPOIS de auth (Story 4.4): um HIT
+//    só é servido/armazenado após UseAuthentication/UseAuthorization validarem a request,
+//    fechando o bypass em que um HIT servia o status de uma compra sem token (ADE-009).
+app.UseMiddleware<XCacheMiddleware>();
 
 // Endpoint de saúde para smoke test / Container App health probe.
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "gateway-yarp" }));

@@ -5,7 +5,7 @@ using ModelContextProtocol.Server;
 namespace Fifa2026.V2.McpServer.Tools;
 
 /// <summary>
-/// AC-2/3/4/5 — as 3 tools MCP do FIFA 2026 Tickets, expostas via o SDK oficial
+/// Story 2.5 (AC-2/3/4/5) + Story 2.8 — as 7 tools MCP read-only do FIFA 2026 Tickets, expostas via o SDK oficial
 /// (ADE-002 Inv 1/2). O atributo <see cref="McpServerToolTypeAttribute"/> faz o
 /// SDK descobrir a classe (WithToolsFromAssembly em Program.cs); cada método com
 /// <see cref="McpServerToolAttribute"/> vira uma tool listada em <c>tools/list</c>

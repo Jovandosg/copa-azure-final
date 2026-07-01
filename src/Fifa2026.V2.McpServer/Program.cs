@@ -6,8 +6,10 @@ using Fifa2026.V2.McpServer.Tools;
 // =============================================================================
 // Fifa2026.V2.McpServer — MCP Server (Story 2.5 / F5).
 //
-// Expõe 3 tools MCP (consultar_disponibilidade, verificar_ingresso,
-// consultar_bracket) sobre o SQL do FIFA 2026 Tickets, via o SDK C# oficial
+// Expõe 7 tools MCP read-only de consulta (consultar_disponibilidade, verificar_ingresso,
+// consultar_bracket, consultar_partidas, consultar_classificacao, consultar_time,
+// consultar_estadio — classe FifaTicketTools) + 1 tool de ação (criar_alerta_ingresso,
+// Fase B — classe FifaActionTools) sobre o SQL do FIFA 2026 Tickets, via o SDK C# oficial
 // pinado em 1.4.0 EXATO (ADE-002 Inv 1). O endpoint /mcp é Streamable HTTP
 // (MapMcp() do ModelContextProtocol.AspNetCore — ADE-002 Inv 2); o framing
 // JSON-RPC 2.0 e o dispatch tools/list / tools/call são do SDK (AC-15: não
